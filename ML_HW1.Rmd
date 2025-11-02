@@ -1,0 +1,61 @@
+---
+title: "Machine Learning HW1"
+author: "Fall HW Team 6"
+date: "2025-11-02"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Prompt
+
+* For this phase use only the ins_t data set.
+* Previous analysis has identified potential predictor variables related to the purchase of the insurance product so no initial variable selection before model building is necessary.
+* The data has missing values that need to be imputed.
+  * Typically, the Bank has used median and mode imputation for continuous and categorical variables but are open to other techniques if they are justified in the report.
+* The Bank is interested in the value of the MARS algorithm. 
+  * Build a model using the MARS algorithm.
+    * (HINT: You CANNOT just copy and paste the code from class. In class we built a model to predict a continuous variable. You will need to look up the documentation for the ‘glm = ‘ option.)
+  * The Bank has not traditionally used CV for its model building. If you desire to, defend your choice in the report.
+    * (HINT: You DO NOT need to do CV here if you don’t want to. For those interested in digging deeper, you can use the ‘trace = ‘, ‘nfold = ‘, and ‘pmethod = ‘ options to get a CV approach to model selection from the MARS algorithm.)
+    * Report the variable importance for each of the variables in the model.
+    * Report the area under the ROC curve as well as a plot of the ROC curve.
+      * (HINT: Use the same approaches you used back in the logistic regression class.)
+* The Bank is also interested in the value of the GAM approach to model building.
+  * Build a GAM model using splines on the continuous variables.
+    * (HINT: You CANNOT just copy and paste the code from class. In class we built a model to predict a continuous variable. You will need to look up the documentation for the ‘family = ‘ option.)
+    * List the variables you chose to keep in your final GAM model and defend your reasoning.
+    * Report the area under the ROC curve as well as a plot of the ROC curve.
+      * (HINT: Use the same approaches you used back in the logistic regression class.) 
+
+# Setup
+
+## Libraries
+
+```{r}
+library(tidyverse)
+library(earth)         # MARS
+library(segmented)     # piecewise (segmented) regression
+library(splines)       # regression splines (bs, ns) - kept for reference
+library(mgcv)          # smoothing splines via GAM
+library(caret)         # data splitting / utilities
+library(Metrics)       # rmse, mse helpers (plus we'll compute R2 manually)
+```
+
+## Data
+
+> For this phase use only the ins_t data set.
+
+```{r}
+ins_t = readr::read_csv('./insurance_t.csv')
+```
+
+# Analysis
+
+## Data Imputation
+
+## MARS Algorithm
+
+## GAM Modeling
