@@ -42,6 +42,7 @@ library(splines)       # regression splines (bs, ns) - kept for reference
 library(mgcv)          # smoothing splines via GAM
 library(caret)         # data splitting / utilities
 library(Metrics)       # rmse, mse helpers (plus we'll compute R2 manually)
+library(DescTools)
 ```
 
 ## Data
@@ -49,12 +50,72 @@ library(Metrics)       # rmse, mse helpers (plus we'll compute R2 manually)
 > For this phase use only the ins_t data set.
 
 ```{r}
-ins_t = readr::read_csv('./insurance_t.csv')
+ins_t_raw = readr::read_csv('./insurance_t.csv')
+ins_t = data.frame(ins_t_raw)
 ```
 
 # Analysis
 
-## Data Imputation
+## Data Cleaning
+
+Convert categorical columns to `factor`, assuming integer counts to be numeric.
+
+```{r}
+categoricals = c('DDA', 'DIRDEP', 'NSF', 'TELLER', 'SAV',
+                 'ATM', 'CD', 'IRA', 'INV', 'MM', 'CC',
+                 'SDB', 'INAREA', 'INS', 'BRANCH')
+
+ins_t = ins_t %>%
+  mutate(across(categoricals,
+                as.factor))
+         
+         
+ins_t
+```
+
+
+> The data has missing values that need to be imputed. Typically, the Bank has used median and mode imputation for continuous and categorical variables but are open to other techniques if they are justified in the report.
+
+```{r}
+missing = ins_t %>%
+  summarize(across(everything(), 
+                   ~sum(is.na(.)))) %>%
+  t() %>% 
+  as.data.frame() %>%
+  mutate(n_missing = V1) %>%
+  dplyr::select(!V1) %>%
+  filter(n_missing > 0)
+
+missing_cols = missing %>% rownames()
+# missing columns subsets for numeric and categorical data, respectively
+missing_num = setdiff(missing_cols, categoricals)
+missing_fctr = intersect(missing_cols, categoricals)
+
+ins_t = ins_t %>%
+  # new missingness indicator column for each column with missingness
+  mutate(
+    across(
+      .cols = missing_cols,
+      .fns = ~ .x %>% 
+        is.na() %>% 
+        as.numeric() %>% 
+        as.factor(),
+      .names = '{col}_is_imputed'
+    )
+  ) %>%
+  # Continuous variables: median imputation
+  mutate(
+    across(missing_num,
+           ~ replace_na(.x, median(.x, na.rm = T))
+    )
+  ) %>%
+  # Categorical variables: mode imputation
+  mutate(
+    across(missing_fctr,
+           ~ replace_na(.x, Mode(.x, na.rm = T)))
+  )
+  
+```
 
 ## MARS Algorithm
 
