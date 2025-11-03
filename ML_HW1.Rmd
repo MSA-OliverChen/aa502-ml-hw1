@@ -43,6 +43,7 @@ library(mgcv)          # smoothing splines via GAM
 library(caret)         # data splitting / utilities
 library(Metrics)       # rmse, mse helpers (plus we'll compute R2 manually)
 library(DescTools)
+library(ROCit)
 ```
 
 ## Data
@@ -128,20 +129,18 @@ From the `earth` documentation: "For cross validation, use the `nfold` argument.
 
 ```{r}
 vars = ins_t %>%
-  # dplyr::select(-ends_with('is_imputed')) %>%
   colnames()
 
 resp = 'INS'
 pred = vars[vars != resp]
 
 form = reformulate(pred, response = resp)
-
 form
 ```
 
 
 ```{r}
-# 
+set.seed(123)
 ins_mars = earth(form,
                  data=ins_t,
                  degree=2,
@@ -151,18 +150,32 @@ ins_mars = earth(form,
                  glm=list(family=binomial)
                  )
 summary(ins_mars)
-
-ev_mars = evimp(ins_mars)
-plot(ev_mars, main='Variable Importance')
-
-par(mfrow=c(2,2))
-plotmo(ins_mars, type="response", nresponse=1, do.par=FALSE)
-par(mfrow=c(1,1))
 ```
 
 > Report the variable importance for each of the variables in the model.
 
+```{r}
+ev_mars = evimp(ins_mars)
+plot(ev_mars, main='Variable Importance')
+ev_mars
+```
+
 > Report the area under the ROC curve as well as a plot of the ROC curve. (HINT: Use the same approaches you used back in the logistic regression class.)
+
+```{r}
+mars_p_hat = c(predict(ins_mars, type='response'))
+mars_roc = rocit(mars_p_hat, ins_t$INS)
+```
+
+```{r}
+mars_roc$AUC
+```
+
+```{r}
+plot(mars_roc)
+title("ROC Curve")
+```
+
 
 ## GAM Modeling
 
