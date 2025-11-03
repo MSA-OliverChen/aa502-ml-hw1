@@ -94,7 +94,7 @@ ins_t = ins_t %>%
   # new missingness indicator column for each column with missingness
   mutate(
     across(
-      .cols = missing_cols,
+      .cols = all_of(missing_cols),
       .fns = ~ .x %>% 
         is.na() %>% 
         as.numeric() %>% 
@@ -104,13 +104,13 @@ ins_t = ins_t %>%
   ) %>%
   # Continuous variables: median imputation
   mutate(
-    across(missing_num,
+    across(all_of(missing_num),
            ~ replace_na(.x, median(.x, na.rm = T))
     )
   ) %>%
   # Categorical variables: mode imputation
   mutate(
-    across(missing_fctr,
+    across(all_of(missing_fctr),
            ~ replace_na(.x, Mode(.x, na.rm = T)))
   )
   
