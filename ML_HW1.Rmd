@@ -53,6 +53,7 @@ library(glmnet)
 ```{r}
 ins_t_raw = readr::read_csv('./insurance_t.csv')
 ins_t = data.frame(ins_t_raw)
+nrow(ins_t)
 ```
 
 # Analysis
@@ -168,6 +169,15 @@ gam1 <- mgcv::gam(INS ~ s(ACCTAGE, k=5) + DDA + s(DDABAL, k=5) + s(DEPAMT, k=5) 
 summary(gam1)
 ```
 
+>AUC of method 1 on training data
+
+```{r}
+m1_pred = predict(gam1, ins_t, type = "response")
+library(ROCit)
+m1_roc <- rocit(m1_pred, ins_t$INS)
+m1_roc$AUC #0.79- not bad! 
+```
+
 ### Method 2: Variable selection using LRT
 ```{r}
 full.model = glm(INS~., data = ins_t, family = "binomial"(link = "logit"))
@@ -181,7 +191,7 @@ sig_lin_vars= rownames(sig_lin_tbl)
 num_preds = setdiff(colnames(ins_t), categoricals)
 
 #Get any that were not significant in our LRT (meaning they might be nonlinear)
-gam_vars = setdiff(predictor_list, sig_lin_vars)
+gam_vars = setdiff(num_preds, sig_lin_vars)
 
 for (j in gam_vars){
   print(paste(j, ':', length(unique(ins_t[[j]]))))
@@ -223,10 +233,18 @@ gam2 <- mgcv::gam(INS ~ s(DEP) + s(DEPAMT) + s(NSFAMT) + s(POS) + s(POSAMT) + s(
                     s(INVBAL) + s(MMBAL) + s(CRSCORE) + s(MMCRED, k=5) + s(CCPURC, k=5) +
                     SAVBAL + SAV + CD + DDABAL + DDA + BRANCH + ATMAMT + CC + TELLER + 
                     MM + INV + CDBAL + IRA + PHONE + CHECKS + ACCTAGE, data = ins_t, method="REML", family = binomial(link="logit"))
-summary(gam2)
 ```
 
-### Method 3: Variable selection using output of MARS/EARTH
-```{r}
+>AUC of method 2 on training data
 
+```{r}
+m2_pred = predict(gam2, ins_t, type = "response")
+library(ROCit)
+m2_roc <- rocit(m2_pred, ins_t$INS)
+m2_roc$AUC #Not bad- AUC = 0.78
+```
+
+### ROC graph for GAM
+```{r}
+plot(m1_roc)
 ```
