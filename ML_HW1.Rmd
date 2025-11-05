@@ -43,6 +43,8 @@ library(mgcv)          # smoothing splines via GAM
 library(caret)         # data splitting / utilities
 library(Metrics)       # rmse, mse helpers (plus we'll compute R2 manually)
 library(DescTools)
+library(ROCit)
+library(glmtoolbox)
 ```
 
 ## Data
@@ -92,16 +94,16 @@ missing_fctr = intersect(missing_cols, categoricals)
 
 ins_t = ins_t %>%
   # new missingness indicator column for each column with missingness
-  mutate(
-    across(
-      .cols = all_of(missing_cols),
-      .fns = ~ .x %>% 
-        is.na() %>% 
-        as.numeric() %>% 
-        as.factor(),
-      .names = '{col}_is_imputed'
-    )
-  ) %>%
+  # mutate(
+  #   across(
+  #     .cols = all_of(missing_cols),
+  #     .fns = ~ .x %>% 
+  #       is.na() %>% 
+  #       as.numeric() %>% 
+  #       as.factor(),
+  #     .names = '{col}_is_imputed'
+  #   )
+  # ) %>%
   # Continuous variables: median imputation
   mutate(
     across(all_of(missing_num),
@@ -111,7 +113,9 @@ ins_t = ins_t %>%
   # Categorical variables: mode imputation
   mutate(
     across(all_of(missing_fctr),
-           ~ replace_na(.x, Mode(.x, na.rm = T)))
+           ~ replace_na(.x, Mode(.x, na.rm = T))
+           # ~ .x %>% as.character() %>% replace_na('MISSING') %>% as.factor()
+    )
   )
   
 ```
@@ -120,12 +124,75 @@ ins_t = ins_t %>%
 
 > Build a model using the MARS algorithm. (HINT: You CANNOT just copy and paste the code from class. In class we built a model to predict a continuous variable. You will need to look up the documentation for the ‘glm = ‘ option.)
 
+From the `earth` documentation: "If the response is binary or a factor, consider using the `glm` argument...`glm=NULL` (default) or a list of arguments to pass on to glm...Example: `earth(..., glm=list(family=binomial))`" In this case, we are predicting purchase of the variable annuity product, so we should use the binomial link family from logistic regression.
 
 > The Bank has not traditionally used CV for its model building. If you desire to, defend your choice in the report. (HINT: You DO NOT need to do CV here if you don’t want to. For those interested in digging deeper, you can use the ‘trace = ‘, ‘nfold = ‘, and ‘pmethod = ‘ options to get a CV approach to model selection from the MARS algorithm.)
 
+From the `earth` documentation: "For cross validation, use the `nfold` argument."
+
+```{r}
+vars = ins_t %>%
+  colnames()
+
+resp = 'INS'
+pred = vars[vars != resp]
+
+form = reformulate(pred, response = resp)
+form
+```
+
+```{r}
+set.seed(123)
+ins_mars = earth(form,
+                 data=ins_t,
+                 degree=1,
+                 nfold=5,
+                 pmethod='cv',
+                 trace=.5,
+                 glm=list(family=binomial)
+                 )
+summary(ins_mars)
+```
+
 > Report the variable importance for each of the variables in the model.
 
+```{r}
+ev_mars = evimp(ins_mars)
+plot(ev_mars, main='Variable Importance')
+ev_mars
+```
+
 > Report the area under the ROC curve as well as a plot of the ROC curve. (HINT: Use the same approaches you used back in the logistic regression class.)
+
+```{r}
+mars_p_hat = c(predict(ins_mars, type='response'))
+mars_roc = rocit(mars_p_hat, ins_t$INS)
+```
+
+```{r}
+mars_roc$AUC
+```
+
+```{r}
+# lift table
+mars_roc %>% gainstable()
+```
+
+```{r}
+cutoff = plot(mars_roc, YIndex = TRUE, values = TRUE)$optimal[['value']]
+mars_preds = if_else(mars_p_hat >= cutoff, "pred_1", "pred_0")
+confusion = table(ins_t$INS, mars_preds)
+
+accuracy = (confusion[[1, 1]] + confusion[[2, 2]]) / sum(confusion)
+accuracy
+```
+
+
+```{r}
+plot(mars_roc)
+title("ROC Curve")
+```
+
 
 ## GAM Modeling
 
