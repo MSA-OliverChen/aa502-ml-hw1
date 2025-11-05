@@ -246,5 +246,22 @@ m2_roc$AUC #Not bad- AUC = 0.78
 
 ### ROC graph for GAM
 ```{r}
-plot(m1_roc)
+plot(m2_roc)
+```
+
+### AUC and Confusion matrix
+```{r}
+#Use validation data
+m2_pred = predict(gam2, ins_t, type = "response")
+m2_roc <- rocit(m2_pred, ins_t$INS)
+
+#Get optimal probability cutoff for classification using Youden's J
+optimal_cutoff <- plot(m2_roc)$optimal[['value']]
+
+#Get predictions based on cutoff - gave them names to make confusion matrix #easier to read
+m2_preds = if_else(m2_pred > optimal_cutoff, "pred_1", "pred_0")
+
+table(ins_t$INS, m2_preds)
+
+#Accuracy = (4723 + 1530)/(4723 + 854 + 1388 + 1530)
 ```
