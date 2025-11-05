@@ -44,6 +44,7 @@ library(caret)         # data splitting / utilities
 library(Metrics)       # rmse, mse helpers (plus we'll compute R2 manually)
 library(DescTools)
 library(ROCit)
+library(glmtoolbox)
 ```
 
 ## Data
@@ -93,16 +94,16 @@ missing_fctr = intersect(missing_cols, categoricals)
 
 ins_t = ins_t %>%
   # new missingness indicator column for each column with missingness
-  mutate(
-    across(
-      .cols = all_of(missing_cols),
-      .fns = ~ .x %>% 
-        is.na() %>% 
-        as.numeric() %>% 
-        as.factor(),
-      .names = '{col}_is_imputed'
-    )
-  ) %>%
+  # mutate(
+  #   across(
+  #     .cols = all_of(missing_cols),
+  #     .fns = ~ .x %>% 
+  #       is.na() %>% 
+  #       as.numeric() %>% 
+  #       as.factor(),
+  #     .names = '{col}_is_imputed'
+  #   )
+  # ) %>%
   # Continuous variables: median imputation
   mutate(
     across(all_of(missing_num),
@@ -112,7 +113,9 @@ ins_t = ins_t %>%
   # Categorical variables: mode imputation
   mutate(
     across(all_of(missing_fctr),
-           ~ replace_na(.x, Mode(.x, na.rm = T)))
+           ~ replace_na(.x, Mode(.x, na.rm = T))
+           # ~ .x %>% as.character() %>% replace_na('MISSING') %>% as.factor()
+    )
   )
   
 ```
@@ -138,12 +141,11 @@ form = reformulate(pred, response = resp)
 form
 ```
 
-
 ```{r}
 set.seed(123)
 ins_mars = earth(form,
                  data=ins_t,
-                 degree=2,
+                 degree=1,
                  nfold=5,
                  pmethod='cv',
                  trace=.5,
@@ -170,6 +172,21 @@ mars_roc = rocit(mars_p_hat, ins_t$INS)
 ```{r}
 mars_roc$AUC
 ```
+
+```{r}
+# lift table
+mars_roc %>% gainstable()
+```
+
+```{r}
+cutoff = plot(mars_roc, YIndex = TRUE, values = TRUE)$optimal[['value']]
+mars_preds = if_else(mars_p_hat >= cutoff, "pred_1", "pred_0")
+confusion = table(ins_t$INS, mars_preds)
+
+accuracy = (confusion[[1, 1]] + confusion[[2, 2]]) / sum(confusion)
+accuracy
+```
+
 
 ```{r}
 plot(mars_roc)
