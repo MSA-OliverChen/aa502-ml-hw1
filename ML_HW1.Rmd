@@ -43,6 +43,7 @@ library(mgcv)          # smoothing splines via GAM
 library(caret)         # data splitting / utilities
 library(Metrics)       # rmse, mse helpers (plus we'll compute R2 manually)
 library(DescTools)
+library(glmnet)
 library(ROCit)
 library(glmtoolbox)
 ```
@@ -54,6 +55,7 @@ library(glmtoolbox)
 ```{r}
 ins_t_raw = readr::read_csv('./insurance_t.csv')
 ins_t = data.frame(ins_t_raw)
+nrow(ins_t)
 ```
 
 # Analysis
@@ -117,7 +119,7 @@ ins_t = ins_t %>%
            # ~ .x %>% as.character() %>% replace_na('MISSING') %>% as.factor()
     )
   )
-  
+head(ins_t, n=5)
 ```
 
 ## MARS Algorithm
@@ -201,3 +203,132 @@ title("ROC Curve")
 > List the variables you chose to keep in your final GAM model and defend your reasoning.
 
 > Report the area under the ROC curve as well as a plot of the ROC curve. (HINT: Use the same approaches you used back in the logistic regression class.) 
+
+### Method 1: Variable selection with LASSO
+```{r}
+#Standardize
+ins_t_s <- ins_t %>%
+      mutate(across(where(is.numeric), scale))
+
+#Perform Lasso regression on training data
+x_train <- model.matrix(INS ~ ., ins_t_s)[, -1]
+y_train <- ins_t_s$INS
+
+set.seed(123)
+cv_lasso <- cv.glmnet(x_train, y_train, alpha = 1, nfolds = 10, family = binomial(link=logit))
+
+#get coefficients
+best_lambda = cv_lasso$lambda.min
+coefs = as.matrix(coef(cv_lasso, s = best_lambda))
+nonzero = coefs[coefs != 0, , drop = FALSE]
+#Nonzero coefficents: 
+#Numeric:
+# ACCTAGE, DDABAL, DEPAMT, CHECKS, PHONE, TELLER, SAVBAL, ATMAMT, POS, POSAMT, CDBAL, IRABAL, INVBAL, MMCRED, HMVAL
+
+#Categorical:
+# DDA, DIRDEP, SAV, ATM, CD, IRA, INV, MM, CC, SDB, BRANCH
+
+gam1 <- mgcv::gam(INS ~ s(ACCTAGE, k=5) + DDA + s(DDABAL, k=5) + s(DEPAMT, k=5) + s(CHECKS, k=5)+
+        DIRDEP + s(PHONE, k=5) + TELLER + SAV + s(SAVBAL, k=5) + ATM +
+        s(ATMAMT, k=5) + s(POS, k=5) + s(POSAMT, k=5) + CD + s(CDBAL, k=9) + IRA + 
+        s(IRABAL, k=5) + INV + MM + s(MMCRED, k=5) + CC + SDB + 
+        s(HMVAL, k=5) + BRANCH, data=ins_t, method="REML", family = binomial(link="logit"))
+summary(gam1)
+```
+
+>AUC of method 1 on training data
+
+```{r}
+m1_pred = predict(gam1, ins_t, type = "response")
+library(ROCit)
+m1_roc <- rocit(m1_pred, ins_t$INS)
+m1_roc$AUC #0.79- not bad! 
+```
+
+### Method 2: Variable selection using LRT
+```{r}
+full.model = glm(INS~., data = ins_t, family = "binomial"(link = "logit"))
+test = car::Anova(full.model, test = 'LR', type = 'III', singular.ok =TRUE)
+sig_lin_tbl = test[rownames(test) %in% colnames(ins_t),] %>% arrange (`Pr(>Chisq)`) %>% head(n=16)
+sig_lin_vars= rownames(sig_lin_tbl)
+
+#For numeric variables, fit a GAM and see which ones are nonlinearly related
+
+#Get all our numerical predictors
+num_preds = setdiff(colnames(ins_t), categoricals)
+
+#Get any that were not significant in our LRT (meaning they might be nonlinear)
+gam_vars = setdiff(num_preds, sig_lin_vars)
+
+for (j in gam_vars){
+  print(paste(j, ':', length(unique(ins_t[[j]]))))
+  
+}
+#MMCRED and CCPURC have a maximum degree (k) of 5 since they have 5 levels
+MMCRED_CCPURC_gams = lapply(c("MMCRED", "CCPURC"), function(var_name){
+  formula_str = paste("INS ~ s(", var_name, ", k=5)")
+  formula_obj = as.formula(formula_str)
+  pen.edf(mgcv::gam(formula_obj, data = ins_t, method = "REML", family = binomial(link="logit")))
+})
+
+MMCRED_CCPURC_gams
+
+#Both MMCRED and CCPURC are nonlinear!
+
+#Get the rest of the variables besides those 2
+gam_vars2 = setdiff(gam_vars, c("MMCRED","CCPURC"))
+gam_vars2
+#Repeat for the rest using the default degree
+univariate_gams = lapply(gam_vars2, function(var_name){
+  formula_str = paste("INS ~ s(", var_name, ")")
+  formula_obj = as.formula(formula_str)
+  pen.edf(mgcv::gam(formula_obj, data = ins_t, method = "REML", family = binomial(link="logit")))
+})
+names(univariate_gams) = gam_vars2
+nonlinear_other_vars = names(univariate_gams[univariate_gams > 1.20])
+
+#"DEP"     "DEPAMT"  "NSFAMT"  "POS"     "POSAMT"  "IRABAL"  "INVBAL"  "MMBAL"   "CRSCORE" are nonlinear
+
+#So all in all we have the following variables with nonlinear relationship to outcome that MAY be significant:
+c(nonlinear_other_vars, "MMCRED", "CCPURC")
+#"DEP"     "DEPAMT"  "NSFAMT"  "POS"     "POSAMT"  "IRABAL"  "INVBAL"  "MMBAL"   "CRSCORE" "MMCRED"  "CCPURC" 
+# Where MMCRED and CCPURC require k=5 or less
+
+#Combine into a modified full model w/ significant linear predictors from before plus splines fitted to these:
+
+gam2 <- mgcv::gam(INS ~ s(DEP) + s(DEPAMT) + s(NSFAMT) + s(POS) + s(POSAMT) + s(IRABAL) +
+                    s(INVBAL) + s(MMBAL) + s(CRSCORE) + s(MMCRED, k=5) + s(CCPURC, k=5) +
+                    SAVBAL + SAV + CD + DDABAL + DDA + BRANCH + ATMAMT + CC + TELLER + 
+                    MM + INV + CDBAL + IRA + PHONE + CHECKS + ACCTAGE, data = ins_t, method="REML", family = binomial(link="logit"))
+```
+
+>AUC of method 2 on training data
+
+```{r}
+m2_pred = predict(gam2, ins_t, type = "response")
+library(ROCit)
+m2_roc <- rocit(m2_pred, ins_t$INS)
+m2_roc$AUC #Not bad- AUC = 0.78
+```
+
+### ROC graph for GAM
+```{r}
+plot(m2_roc)
+```
+
+### AUC and Confusion matrix
+```{r}
+#Use validation data
+m2_pred = predict(gam2, ins_t, type = "response")
+m2_roc <- rocit(m2_pred, ins_t$INS)
+
+#Get optimal probability cutoff for classification using Youden's J
+optimal_cutoff <- plot(m2_roc)$optimal[['value']]
+
+#Get predictions based on cutoff - gave them names to make confusion matrix #easier to read
+m2_preds = if_else(m2_pred > optimal_cutoff, "pred_1", "pred_0")
+
+table(ins_t$INS, m2_preds)
+
+#Accuracy = (4723 + 1530)/(4723 + 854 + 1388 + 1530)
+```
